@@ -11,6 +11,11 @@ RUN uv pip install --no-cache --python /opt/hermes/.venv/bin/python \
 # Add the Telethon platform plugin (copied from build context)
 COPY plugins/platforms/telethon/ /opt/hermes/plugins/platforms/telethon/
 
+# Copy startup script and optional proxy file
+COPY start.sh /opt/hermes/start.sh
+RUN chmod +x /opt/hermes/start.sh
+COPY proxy.txt /opt/hermes/proxy.txt
+
 # Telethon config (override via HF Space Secrets — do NOT hardcode real tokens)
 ENV TELETHON_API_ID=""
 ENV TELETHON_API_HASH=""
@@ -21,5 +26,5 @@ ENV TELETHON_PROXY=""
 
 ENV HERMES_PROFILE=default
 
-# Start Hermes gateway as PID 1
-CMD ["hermes", "gateway", "run"]
+# Start Hermes gateway via startup script (reads proxy.txt at runtime)
+CMD ["/opt/hermes/start.sh"]
