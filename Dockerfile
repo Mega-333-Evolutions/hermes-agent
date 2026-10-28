@@ -1,5 +1,8 @@
 FROM nousresearch/hermes-agent:latest
 
+# Install uv (Hermes venv has no pip at build time)
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+
 # Install Telethon from git source (Layer 232) + PySocks (provides 'import socks')
 RUN uv pip install --no-cache --python /opt/hermes/.venv/bin/python \
     git+https://codeberg.org/Lonami/Telethon.git PySocks
