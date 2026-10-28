@@ -11,11 +11,8 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 RUN uv pip install --no-cache --python /opt/hermes/.venv/bin/python \
     telethon==1.45.0 python-socks
 
-# Add the Telethon platform plugin from your private GitHub fork
-RUN mkdir -p /opt/hermes/plugins/platforms/telethon && \
-    git clone --depth 1 https://x-access-token:${GITHUB_TOKEN}@github.com/taslimx19/hermes-agent-telethon.git /tmp/ht && \
-    cp -r /tmp/ht/plugins/platforms/telethon/* /opt/hermes/plugins/platforms/telethon/ && \
-    rm -rf /tmp/ht
+# Add the Telethon platform plugin (copied from build context)
+COPY plugins/platforms/telethon/ /opt/hermes/plugins/platforms/telethon/
 
 # Telethon config (override via HF Space Secrets — do NOT hardcode real tokens)
 ENV TELETHON_API_ID=""
