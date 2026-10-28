@@ -6,7 +6,7 @@ colorTo: indigo
 sdk: docker
 pinned: false
 license: mit
-short_description: Hermes AI agent gateway with Telethon Telegram plugin running on HF Spaces
+short_description: Hermes agent with Telethon Telegram plugin
 ---
 
 # Hermes + Telethon on Hugging Face Spaces
