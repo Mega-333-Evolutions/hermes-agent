@@ -1,15 +1,12 @@
 # Hermes Agent + Telethon on Hugging Face Spaces
 FROM nousresearch/hermes-agent:latest
 
-# --- Build arg: GitHub PAT to clone your private Telethon plugin repo ---
-ARG GITHUB_TOKEN
-
 # Install uv (Hermes venv has no pip)
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
-# Install Telethon + SOCKS proxy (mtproto needs it from sandboxes)
+# Install Telethon + PySocks (provides 'import socks' for SOCKS5 proxy)
 RUN uv pip install --no-cache --python /opt/hermes/.venv/bin/python \
-    telethon==1.45.0 python-socks
+    telethon==1.45.0 PySocks
 
 # Add the Telethon platform plugin (copied from build context)
 COPY plugins/platforms/telethon/ /opt/hermes/plugins/platforms/telethon/
