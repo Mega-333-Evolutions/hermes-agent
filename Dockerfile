@@ -2,7 +2,7 @@
 FROM nousresearch/hermes-agent:latest
 
 # Install Telethon + SOCKS proxy (mtproto needs it from sandboxes)
-RUN uv pip install --no-cache-dir telethon==1.45.0 python-socks==3.2.0
+RUN /opt/hermes/.venv/bin/python -m pip install --no-cache-dir telethon==1.45.0 python-socks==3.2.0
 
 # Add the Telethon platform plugin from your GitHub fork
 RUN mkdir -p /opt/hermes/plugins/platforms/telethon && \
