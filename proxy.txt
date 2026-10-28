@@ -1,3 +1,0 @@
-# Paste your SOCKS5 proxy here in format: host:port:user:pass
-# Example: 45.38.107.97:6014:username:password
-# Leave this line empty or remove the file if you don't need a proxy
