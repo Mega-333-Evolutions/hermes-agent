@@ -873,7 +873,7 @@ class TelethonAdapter(BasePlatformAdapter):
                 or ""
             )
 
-            text = message.message or ""
+            text = str(message.message or "")
             msg_type = MessageType.TEXT
             if message.media:
                 msg_type = MessageType.PHOTO
@@ -909,7 +909,7 @@ class TelethonAdapter(BasePlatformAdapter):
             )
 
             # --- /delete <session_id> interception ---
-            if text.strip().startswith("/delete"):
+            if (text or "").strip().startswith("/delete"):
                 parts = text.split(None, 1)
                 session_id = parts[1].strip() if len(parts) > 1 else ""
                 if session_id:
