@@ -10,6 +10,9 @@ RUN uv pip install --no-cache --python /opt/hermes/.venv/bin/python \
 # Add the Telethon platform plugin (already in HF space)
 COPY plugins/platforms/telethon/ /opt/hermes/plugins/platforms/telethon/
 
+# Fix: copy set_session_backend into delegation_backends.py
+COPY agent_delegation_backends.py /opt/hermes/agent/delegation_backends.py
+
 ENV HERMES_DASHBOARD=1 \
     HERMES_DASHBOARD_HOST=0.0.0.0 \
     HERMES_DASHBOARD_PORT=7860 \
