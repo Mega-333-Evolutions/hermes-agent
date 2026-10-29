@@ -208,7 +208,8 @@ class TelethonAdapter(BasePlatformAdapter):
         # Authorize on user identity alone (no chat context on inline queries).
         try:
             from plugins.platforms.telethon.inline_picker import (
-                build_inline_results, CACHE_TIME_SECONDS as _CACHE,
+                build_inline_results, collect_inline_catalog,
+                CACHE_TIME_SECONDS as _CACHE,
             )
         except Exception:
             logger.debug("[Telethon] inline picker unavailable", exc_info=True)
@@ -264,7 +265,8 @@ class TelethonAdapter(BasePlatformAdapter):
         # Authorize on user identity (same as inline queries)
         try:
             from plugins.platforms.telethon.inline_picker import (
-                build_inline_results, CACHE_TIME_SECONDS as _CACHE,
+                build_inline_results, collect_inline_catalog,
+                CACHE_TIME_SECONDS as _CACHE,
             )
         except Exception:
             logger.debug("[Telethon] inline picker unavailable for guest chat", exc_info=True)
@@ -294,8 +296,16 @@ class TelethonAdapter(BasePlatformAdapter):
             results, next_offset = await asyncio.to_thread(
                 build_inline_results, query, offset=""
             )
+            logger.debug(
+                "[Telethon] guest chat query='%s' results=%d", query, len(results),
+            )
 
             if not results:
+                # Build a helpful hint with a few example commands
+                catalog = collect_inline_catalog()
+                examples = [f"/{c['name']}" for c in catalog[:6]]
+                hint = "\n".join(examples) if examples else ""
+                msg = f"⚠ No matching commands for '{query or '(empty)'}'.\n\nTry:\n{hint}" if hint else "⚠ No matching commands or skills found."
                 await self._client(SetBotGuestChatResultRequest(
                     query_id=query_id,
                     result=InputBotInlineResult(
@@ -304,7 +314,7 @@ class TelethonAdapter(BasePlatformAdapter):
                         title="No results",
                         description="No matching commands or skills.",
                         send_message=InputBotInlineMessageText(
-                            message="⚠ No matching commands or skills found.",
+                            message=msg,
                         ),
                     ),
                 ))
