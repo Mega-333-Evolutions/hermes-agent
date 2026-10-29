@@ -23,7 +23,11 @@ from gateway.platforms._shared import get_scoped_secret as _get_scoped_secret
 try:
     from telethon import TelegramClient, events
     from telethon.tl.custom.button import Button
-    from telethon.tl.types import User, Chat, Channel, InputBotInlineResult, InputBotInlineMessageText
+    from telethon.tl.types import (
+        User, Chat, Channel, InputBotInlineResult, InputBotInlineMessageText,
+        UpdateBotGuestChatQuery,
+    )
+    from telethon.tl.functions.messages import SetBotGuestChatResultRequest
     _TELETHON_AVAILABLE = True
 except Exception:  # telethon not installed in this environment
     TelegramClient = None  # type: ignore[assignment]
@@ -124,6 +128,8 @@ class TelethonAdapter(BasePlatformAdapter):
 
             self._client.add_event_handler(self._handle_inline_query, events.InlineQuery)
             self._client.add_event_handler(self._handle_callback_query, events.CallbackQuery)
+            self._client.add_event_handler(
+                self._handle_guest_chat_query, events.Raw(UpdateBotGuestChatQuery))
 
             self._connected = True
             logger.info("[Telethon] Connected as @%s (id=%s)", self._bot_username, self._bot_id)
@@ -237,6 +243,90 @@ class TelethonAdapter(BasePlatformAdapter):
             logger.debug("[Telethon] inline query answered (%d results)", len(inline_results))
         except Exception:
             logger.exception("[Telethon] inline query handler failed")
+
+    async def _handle_guest_chat_query(self, event) -> None:
+        """Handle guest chat queries (@botname mention in groups where bot isn't a member).
+
+        Builds inline results using the same picker as inline queries, then posts
+        the result directly into the chat via messages.setBotGuestChatResult.
+        Requires bot_guestchat flag set on the bot via @BotFather.
+        """
+        try:
+            query_id = event.query_id
+            message = event.message
+            query = getattr(message, "message", "") or ""
+            sender = getattr(message, "from_id", None)
+            user_id = str(getattr(sender, "user_id", "") or "") if sender else ""
+        except Exception:
+            logger.debug("[Telethon] guest chat query: cannot read event fields", exc_info=True)
+            return
+
+        # Authorize on user identity (same as inline queries)
+        try:
+            from plugins.platforms.telethon.inline_picker import (
+                build_inline_results, CACHE_TIME_SECONDS as _CACHE,
+            )
+        except Exception:
+            logger.debug("[Telethon] inline picker unavailable for guest chat", exc_info=True)
+            return
+
+        authorized = bool(user_id) and user_id in self._allowed_users
+        if not self._allow_all and not authorized:
+            # Answer with empty result for unauthorized users
+            try:
+                await self._client(SetBotGuestChatResultRequest(
+                    query_id=query_id,
+                    result=InputBotInlineResult(
+                        id="0",
+                        type="article",
+                        title="Unauthorized",
+                        description="You are not authorized to use this bot.",
+                        send_message=InputBotInlineMessageText(
+                            message="⚠ You are not authorized to use this bot.",
+                        ),
+                    ),
+                ))
+            except Exception:
+                pass
+            return
+
+        try:
+            results, next_offset = await asyncio.to_thread(
+                build_inline_results, query, offset=""
+            )
+
+            if not results:
+                await self._client(SetBotGuestChatResultRequest(
+                    query_id=query_id,
+                    result=InputBotInlineResult(
+                        id="0",
+                        type="article",
+                        title="No results",
+                        description="No matching commands or skills.",
+                        send_message=InputBotInlineMessageText(
+                            message="⚠ No matching commands or skills found.",
+                        ),
+                    ),
+                ))
+                return
+
+            # Guest chat posts a single result directly into the chat
+            r = results[0]
+            inline_result = InputBotInlineResult(
+                id=r["id"],
+                type="article",
+                title=r["title"],
+                description=r["description"],
+                send_message=InputBotInlineMessageText(message=r["message_text"]),
+            )
+
+            await self._client(SetBotGuestChatResultRequest(
+                query_id=query_id,
+                result=inline_result,
+            ))
+            logger.debug("[Telethon] guest chat query answered (%s)", r.get("title", ""))
+        except Exception:
+            logger.exception("[Telethon] guest chat query handler failed")
 
     async def disconnect(self) -> None:
         self._connected = False
