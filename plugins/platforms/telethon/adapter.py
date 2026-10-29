@@ -301,18 +301,24 @@ class TelethonAdapter(BasePlatformAdapter):
             )
 
             if not results:
-                # Build a helpful hint with a few example commands
+                # Build a helpful intro message for general queries (hi, who are you, help, etc.)
                 catalog = collect_inline_catalog()
-                examples = [f"/{c['name']}" for c in catalog[:6]]
+                examples = [f"/{c['name']}" for c in catalog[:8]]
                 hint = "\n".join(examples) if examples else ""
-                msg = f"⚠ No matching commands for '{query or '(empty)'}'.\n\nTry:\n{hint}" if hint else "⚠ No matching commands or skills found."
+
+                msg = (
+                    f"🤖 Hello! I'm @{self._bot_username or 'hermes_bot'}, your Hermes AI assistant.\n\n"
+                    f"I can help you with:\n{hint}\n\n"
+                    f"💡 Start a DM with me first to set up your session and choose a model.\n"
+                    f"Then come back here and mention me with a command."
+                )
                 await self._client(SetBotGuestChatResultRequest(
                     query_id=query_id,
                     result=InputBotInlineResult(
                         id="0",
                         type="article",
-                        title="No results",
-                        description="No matching commands or skills.",
+                        title="Hermes AI Assistant",
+                        description="Chat with Hermes in any group",
                         send_message=InputBotInlineMessageText(
                             message=msg,
                         ),
