@@ -251,6 +251,9 @@ class TelethonAdapter(BasePlatformAdapter):
         Builds inline results using the same picker as inline queries, then posts
         the result directly into the chat via messages.setBotGuestChatResult.
         Requires bot_guestchat flag set on the bot via @BotFather.
+
+        General (non-command) text is routed through Hermes's handle_message
+        pipeline so it gets a real AI response with memory saving, just like a DM.
         """
         try:
             query_id = event.query_id
@@ -258,6 +261,12 @@ class TelethonAdapter(BasePlatformAdapter):
             query = getattr(message, "message", "") or ""
             sender = getattr(message, "from_id", None)
             user_id = str(getattr(sender, "user_id", "") or "") if sender else ""
+            user_name = (
+                getattr(sender, "username", None)
+                or getattr(sender, "first_name", None)
+                or ""
+            )
+            chat_id = str(getattr(message, "chat_id", "") or "")
         except Exception:
             logger.debug("[Telethon] guest chat query: cannot read event fields", exc_info=True)
             return
@@ -300,47 +309,96 @@ class TelethonAdapter(BasePlatformAdapter):
                 "[Telethon] guest chat query='%s' results=%d", query, len(results),
             )
 
-            if not results:
-                # Build a helpful intro message for general queries (hi, who are you, help, etc.)
-                catalog = collect_inline_catalog()
-                examples = [f"/{c['name']}" for c in catalog[:8]]
-                hint = "\n".join(examples) if examples else ""
-
-                msg = (
-                    f"🤖 Hello! I'm @{self._bot_username or 'hermes_bot'}, your Hermes AI assistant.\n\n"
-                    f"I can help you with:\n{hint}\n\n"
-                    f"💡 Start a DM with me first to set up your session and choose a model.\n"
-                    f"Then come back here and mention me with a command."
+            # --- Command match: post inline result directly into chat ---
+            if results:
+                r = results[0]
+                inline_result = InputBotInlineResult(
+                    id=r["id"],
+                    type="article",
+                    title=r["title"],
+                    description=r["description"],
+                    send_message=InputBotInlineMessageText(message=r["message_text"]),
                 )
                 await self._client(SetBotGuestChatResultRequest(
                     query_id=query_id,
-                    result=InputBotInlineResult(
-                        id="0",
-                        type="article",
-                        title="Hermes AI Assistant",
-                        description="Chat with Hermes in any group",
-                        send_message=InputBotInlineMessageText(
-                            message=msg,
-                        ),
-                    ),
+                    result=inline_result,
                 ))
+                logger.debug("[Telethon] guest chat command answered (%s)", r.get("title", ""))
                 return
 
-            # Guest chat posts a single result directly into the chat
-            r = results[0]
-            inline_result = InputBotInlineResult(
-                id=r["id"],
-                type="article",
-                title=r["title"],
-                description=r["description"],
-                send_message=InputBotInlineMessageText(message=r["message_text"]),
+            # --- General text: route through Hermes handle_message pipeline ---
+            # Temporarily override send() to capture the AI response text.
+            captured: list[str] = []
+            original_send = self.send
+
+            async def capture_send(chat_id: str, content: str, reply_to: Optional[str] = None,
+                                   metadata: Optional[dict[str, Any]] = None):
+                captured.append(content or "")
+                return SendResult(success=True, message_id="captured")
+
+            self.send = capture_send
+
+            try:
+                from gateway.platforms.event import MessageEvent, MessageType
+
+                source = self.build_source(
+                    chat_id=chat_id,
+                    user_id=user_id or "",
+                    chat_type="group",
+                    user_name=user_name,
+                )
+
+                ev = MessageEvent(
+                    text=query,
+                    message_type=MessageType.TEXT,
+                    user_id=user_id,
+                    user_name=user_name,
+                    source=source,
+                    raw_message=message,
+                    message_id=str(getattr(message, "id", "")),
+                    allow_gateway_control=True,
+                    reply_expected=True,
+                )
+
+                await self.handle_message(ev)
+
+                # Wait for streaming response (up to ~25 seconds).
+                for _ in range(25):
+                    await asyncio.sleep(1)
+                    if captured:
+                        break
+            finally:
+                self.send = original_send
+
+            response_text = "\n".join(c for c in captured if c) if captured else ""
+
+            # Build current model info header from picker state (if any).
+            model_info = ""
+            state = self._model_picker_state.get(str(chat_id), {})
+            if state.get("current_model"):
+                provider = state.get("selected_provider", "")
+                model = state.get("current_model", "")
+                if provider and model:
+                    model_info = f"🤖 Model: {provider} / {model}\n"
+                elif model:
+                    model_info = f"🤖 Model: {model}\n"
+
+            full_msg = f"{model_info}{response_text}".strip() if response_text else (
+                "🤖 I'm here! Send me a message and I'll respond. "
+                "Use /model to choose a model, /new for a fresh session."
             )
 
             await self._client(SetBotGuestChatResultRequest(
                 query_id=query_id,
-                result=inline_result,
+                result=InputBotInlineResult(
+                    id="0",
+                    type="article",
+                    title="Hermes AI Assistant",
+                    description="AI response",
+                    send_message=InputBotInlineMessageText(message=full_msg),
+                ),
             ))
-            logger.debug("[Telethon] guest chat query answered (%s)", r.get("title", ""))
+            logger.debug("[Telethon] guest chat general query answered (%d chars)", len(full_msg))
         except Exception:
             logger.exception("[Telethon] guest chat query handler failed")
 
